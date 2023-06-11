@@ -1,4 +1,3 @@
-
 import {WebClient, LogLevel} from "@slack/web-api";
 import { Flags, FlagsMap} from "../../flags";
 require("dotenv").config();

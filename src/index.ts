@@ -1,8 +1,6 @@
 import { App } from "@slack/bolt";
-import {AxiosError} from "axios";
 import { SendConversationToOpenAI } from "./services/openai";
 import { Flags, processFlags } from "./flags";
-import { RequiredError } from "openai/dist/base";
 import { getConversationWithFilters, postEphemeral } from "./services/slack";
 require("dotenv").config();
 
@@ -38,7 +36,6 @@ app.command('/history-interpreter', async ({command, ack, say}) => {
         // say response in slack, include cursor if there is one to continue to next page
         say(`${response}\n ${cursor ? `cursor: ${cursor}`: ''}` || "I'm sorry, I don't understand");
     } catch (error) {
-        console.log(`error: ${error instanceof Error}, axios: ${error instanceof RequiredError}`)
          if (error instanceof Error) {
             if(error.message === "NO_CONVERSATION"){
                 // Error result from getConversationWithFilters
