@@ -1,6 +1,9 @@
 import { App } from "@slack/bolt";
-import {WebClient, LogLevel} from "@slack/web-api";
-import { SendConversationToOpenAI } from "./openai";
+import {AxiosError} from "axios";
+import { SendConversationToOpenAI } from "./services/openai";
+import { Flags, processFlags } from "./flags";
+import { RequiredError } from "openai/dist/base";
+import { getConversationWithFilters, postEphemeral } from "./services/slack";
 require("dotenv").config();
 
 const app = new App({
@@ -9,10 +12,6 @@ const app = new App({
     socketMode: true,
     appToken: process.env.APP_TOKEN
 }); 
-
-const client = new WebClient(process.env.SLACK_BOT_TOKEN, {
-    logLevel: LogLevel.DEBUG
-  });
 
 app.command('/hello', async ({ack, say}) => {
     try{
@@ -26,18 +25,33 @@ app.command('/hello', async ({ack, say}) => {
 app.command('/history-interpreter', async ({command, ack, say}) => {
     try{
         await ack();
-        const conversationResult = await client.conversations.history({channel: command.channel_id});
-        const conversation = conversationResult.messages?.filter(message => message.text !== null)
-        .map(message => message.text ? `${message.user} (${message.ts}): ${message.text}` : null)
-        .join('\n')
-        console.log(`CONVERSATION: ${conversation}`)
-        if (!conversation) {
+        // process flags and handle errors
+        const [flags, errors] = processFlags(command.text || "")
+        if (errors.length > 0) {
+            const errMessage = `I'm sorry, the following flags have invalid values. Errors: ${errors.map(e => e.message).join(', ')}`
+            postEphemeral(command.channel_id, command.user_id, errMessage)
             return
         }
-        const response = await SendConversationToOpenAI(conversation);
-        console.log(`RESPONSE: ${response || ""}`)
-        say(response || "I'm sorry, I don't understand");
+        // get conversation from slack and send it to openai
+        const {conversation, cursor} = await getConversationWithFilters(command.channel_id, flags);
+        const response = await SendConversationToOpenAI(conversation, flags.get(Flags.TRANSLATE_TO_NATIVE) === "true");
+        // say response in slack, include cursor if there is one to continue to next page
+        say(`${response}\n ${cursor ? `cursor: ${cursor}`: ''}` || "I'm sorry, I don't understand");
     } catch (error) {
+        console.log(`error: ${error instanceof Error}, axios: ${error instanceof RequiredError}`)
+         if (error instanceof Error) {
+            if(error.message === "NO_CONVERSATION"){
+                // Error result from getConversationWithFilters
+                postEphemeral(command.channel_id, command.user_id, `I'm sorry, I couldn't find a conversation.`)
+            } else if(error.message === "LIMIT_AND_LATEST_OLDEST_NOT_ALLOWED"){
+                postEphemeral(command.channel_id, command.user_id, `I'm sorry, provide either a limit or a time range, but not both.`)
+            } else if(error.message === "TOKEN_QUANTITY_EXCEDED"){
+                // Error from openai
+                postEphemeral(command.channel_id, command.user_id, `I'm sorry, the conversation is too long. Select a smaller range of messages.`)
+            } else {
+                postEphemeral(command.channel_id, command.user_id, `I'm sorry, unexpected error.`)
+            }
+        } 
         console.log("err")
       console.error(error);
     }
