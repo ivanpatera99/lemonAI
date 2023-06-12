@@ -10,7 +10,7 @@ export const getConversationWithFilters = async (channel: string, filters: Flags
     const limitFilter = filters.get(Flags.LIMIT)
     const latest = filters.get(Flags.LATEST) !== undefined ? dateToUnixTimestamp(new Date(filters.get(Flags.LATEST) || '')) : undefined
     const oldest = filters.get(Flags.OLDEST) !== undefined ? dateToUnixTimestamp(new Date(filters.get(Flags.OLDEST) || '')) : undefined
-    if (limitFilter !== undefined || (latest !== undefined && oldest !== undefined)) {
+    if (limitFilter !== undefined && (latest !== undefined || oldest !== undefined)) {
         throw new Error("LIMIT_AND_LATEST_OLDEST_NOT_ALLOWED")
     }
     const conversationResult = await client.conversations.history({
@@ -26,7 +26,6 @@ export const getConversationWithFilters = async (channel: string, filters: Flags
         `${message.user}@${message.ts}${message.thread_ts ? `(thread_ts:${message.thread_ts})` : ``}: ${message.text}` 
         : null)
     .join('\n')
-    console.log(`CONVERSATION: ${conversation}`)
     if (!conversation) {
         throw new Error("NO_CONVERSATION")
     }
